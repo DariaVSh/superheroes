@@ -96,7 +96,7 @@ class MainPageStateWidget extends StatelessWidget {
               title: 'Nothing found',
               subtitle: 'Search for something else',
               buttonText: 'Search',
-              assetImage: SuperheroesImages.halk,
+              assetImage: SuperheroesImages.hulk,
               imageHeight: 112,
               imageWidth: 84,
               imageTopPadding: 16,
