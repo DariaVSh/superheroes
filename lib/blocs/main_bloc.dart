@@ -1,5 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:http/http.dart' as http;
+import 'package:superheroes/model/superhero.dart';
+
+import '../exception/api_exception.dart';
 
 class MainBloc {
   static const minSymbols = 3;
@@ -13,7 +19,9 @@ class MainBloc {
   StreamSubscription? textSubscription;
   StreamSubscription? searchSubscription;
 
-  MainBloc() {
+  http.Client? client;
+
+  MainBloc({this.client}) {
     stateSubject.add(MainPageState.noFavorites);
 
     textSubscription =
@@ -51,8 +59,14 @@ class MainBloc {
         stateSubject.add(MainPageState.searchResult);
       }
     }, onError: (error, stackTrace) {
+      print(error);
       stateSubject.add(MainPageState.loadingError);
     });
+  }
+
+  void retry() {
+    final currentText = currentTextSubject.value;
+    searchForSuperheroes(currentText);
   }
 
   Stream<List<SuperheroInfo>> observeFavoriteSuperheroes() =>
@@ -62,14 +76,50 @@ class MainBloc {
       searchedSuperheroesSubject;
 
   Future<List<SuperheroInfo>> search(final String text) async {
-    await Future.delayed(const Duration(seconds: 1));
-    return SuperheroInfo.mocked
-        .where((superheroInfo) =>
-            superheroInfo.name.toLowerCase().contains(text.toLowerCase()))
-        .toList();
+    final token = dotenv.env['SUPERHERO_TOKEN'];
+    final response = await (client ??= http.Client())
+        .get(Uri.parse("https://superheroapi.com/api/$token/search/$text"));
+    if(response.statusCode >= 500 && response.statusCode <= 599) {
+      throw ApiException('Server error happened');
+    }
+    if(response.statusCode >= 400 && response.statusCode <= 499) {
+      throw ApiException('Client error happened');
+    }
+    final decoded = json.decode(response.body);
+    if (decoded['response'] == 'success') {
+      final List<dynamic> results = decoded['results'];
+      final List<Superhero> superheroes = results
+          .map((rawSuperhero) => Superhero.fromJson(rawSuperhero))
+          .toList();
+      final List<SuperheroInfo> found = superheroes.map((superhero) {
+        return SuperheroInfo(
+          name: superhero.name,
+          realName: superhero.biography.fullName,
+          imageUrl: superhero.image.url,
+        );
+      }).toList();
+      return found;
+    } else if (decoded['response'] == 'error') {
+      if (decoded['error'] == 'character with given name not found') {
+        return [];
+      }
+      throw ApiException('Client error happened');
+    }
+    throw Exception('Unknown error happened');
   }
 
   Stream<MainPageState> observeMainPageState() => stateSubject;
+
+  void removeFavorite() {
+    final List<SuperheroInfo> currentFavorites =
+        favoriteSuperheroesSubject.value;
+    if (currentFavorites.isEmpty) {
+      favoriteSuperheroesSubject.add(SuperheroInfo.mocked);
+    } else {
+      favoriteSuperheroesSubject
+          .add(currentFavorites.sublist(0, currentFavorites.length - 1));
+    }
+  }
 
   void nextState() {
     final currentState = stateSubject.value;
@@ -90,6 +140,8 @@ class MainBloc {
     currentTextSubject.close();
 
     textSubscription?.cancel();
+
+    client?.close();
   }
 }
 

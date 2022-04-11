@@ -13,6 +13,7 @@ class InfoWithButton extends StatelessWidget {
   final double imageHeight;
   final double imageWidth;
   final double imageTopPadding;
+  final VoidCallback onTap;
 
   const InfoWithButton(
       {Key? key,
@@ -22,7 +23,8 @@ class InfoWithButton extends StatelessWidget {
       required this.assetImage,
       required this.imageHeight,
       required this.imageWidth,
-      required this.imageTopPadding})
+      required this.imageTopPadding,
+      required this.onTap})
       : super(key: key);
 
   @override
@@ -52,7 +54,8 @@ class InfoWithButton extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 20),
-        Text(title,
+        Text(
+          title,
           style: const TextStyle(
               color: SuperheroesColors.white,
               fontWeight: FontWeight.w800,
@@ -69,7 +72,7 @@ class InfoWithButton extends StatelessWidget {
         const SizedBox(height: 30),
         ActionButton(
           text: buttonText,
-          onTap: () {},
+          onTap: onTap,
         ),
       ],
     );
