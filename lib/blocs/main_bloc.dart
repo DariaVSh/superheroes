@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:http/http.dart' as http;
+import 'package:superheroes/favorite_superheroes_storage.dart';
+import 'package:superheroes/model/alighnment_info.dart';
 import 'package:superheroes/model/superhero.dart';
 
 import '../exception/api_exception.dart';
@@ -11,25 +13,23 @@ class MainBloc {
   static const minSymbols = 3;
 
   final BehaviorSubject<MainPageState> stateSubject = BehaviorSubject();
-  final favoriteSuperheroesSubject =
-      BehaviorSubject<List<SuperheroInfo>>.seeded(SuperheroInfo.mocked);
   final searchedSuperheroesSubject = BehaviorSubject<List<SuperheroInfo>>();
   final currentTextSubject = BehaviorSubject<String>.seeded('');
 
   StreamSubscription? textSubscription;
   StreamSubscription? searchSubscription;
+  StreamSubscription? removeFromFavoriteSubscription;
 
   http.Client? client;
 
   MainBloc({this.client}) {
-    stateSubject.add(MainPageState.noFavorites);
-
     textSubscription =
-        Rx.combineLatest2<String, List<SuperheroInfo>, MainPageStateInfo>(
+        Rx.combineLatest2<String, List<Superhero>, MainPageStateInfo>(
                 currentTextSubject
                     .distinct()
                     .debounceTime(const Duration(milliseconds: 500)),
-                favoriteSuperheroesSubject,
+                FavoriteSuperheroesStorage.getInstance()
+                    .observeFavoriteSuperheroes(),
                 (searchedText, favorites) =>
                     MainPageStateInfo(searchedText, favorites.isNotEmpty))
             .listen((value) {
@@ -64,13 +64,30 @@ class MainBloc {
     });
   }
 
+  void removeFromFavorites(final String id) {
+    removeFromFavoriteSubscription?.cancel();
+    removeFromFavoriteSubscription = FavoriteSuperheroesStorage.getInstance()
+        .removeFromFavorites(id)
+        .asStream()
+        .listen(
+          (event) {
+        print('Removed from favorites: $event');
+      },
+      onError: (error, stackTrace) =>
+          print('Error happened in removeFromFavorites: $error, $stackTrace'),
+    );
+  }
+
   void retry() {
     final currentText = currentTextSubject.value;
     searchForSuperheroes(currentText);
   }
 
   Stream<List<SuperheroInfo>> observeFavoriteSuperheroes() =>
-      favoriteSuperheroesSubject;
+      FavoriteSuperheroesStorage.getInstance().observeFavoriteSuperheroes().map(
+          (superheroes) => superheroes
+              .map((superhero) => SuperheroInfo.fromSuperhero(superhero))
+              .toList());
 
   Stream<List<SuperheroInfo>> observeSearchesSuperheroes() =>
       searchedSuperheroesSubject;
@@ -79,10 +96,10 @@ class MainBloc {
     final token = dotenv.env['SUPERHERO_TOKEN'];
     final response = await (client ??= http.Client())
         .get(Uri.parse("https://superheroapi.com/api/$token/search/$text"));
-    if(response.statusCode >= 500 && response.statusCode <= 599) {
+    if (response.statusCode >= 500 && response.statusCode <= 599) {
       throw ApiException('Server error happened');
     }
-    if(response.statusCode >= 400 && response.statusCode <= 499) {
+    if (response.statusCode >= 400 && response.statusCode <= 499) {
       throw ApiException('Client error happened');
     }
     final decoded = json.decode(response.body);
@@ -92,11 +109,7 @@ class MainBloc {
           .map((rawSuperhero) => Superhero.fromJson(rawSuperhero))
           .toList();
       final List<SuperheroInfo> found = superheroes.map((superhero) {
-        return SuperheroInfo(
-          name: superhero.name,
-          realName: superhero.biography.fullName,
-          imageUrl: superhero.image.url,
-        );
+        return SuperheroInfo.fromSuperhero(superhero);
       }).toList();
       return found;
     } else if (decoded['response'] == 'error') {
@@ -109,17 +122,6 @@ class MainBloc {
   }
 
   Stream<MainPageState> observeMainPageState() => stateSubject;
-
-  void removeFavorite() {
-    final List<SuperheroInfo> currentFavorites =
-        favoriteSuperheroesSubject.value;
-    if (currentFavorites.isEmpty) {
-      favoriteSuperheroesSubject.add(SuperheroInfo.mocked);
-    } else {
-      favoriteSuperheroesSubject
-          .add(currentFavorites.sublist(0, currentFavorites.length - 1));
-    }
-  }
 
   void nextState() {
     final currentState = stateSubject.value;
@@ -135,11 +137,12 @@ class MainBloc {
 
   void dispose() {
     stateSubject.close();
-    favoriteSuperheroesSubject.close();
     searchedSuperheroesSubject.close();
     currentTextSubject.close();
 
     textSubscription?.cancel();
+    searchSubscription?.cancel();
+    removeFromFavoriteSubscription?.cancel();
 
     client?.close();
   }
@@ -156,19 +159,33 @@ enum MainPageState {
 }
 
 class SuperheroInfo {
+  final String id;
   final String name;
   final String realName;
   final String imageUrl;
+  final AlignmentInfo? alignmentInfo;
 
   const SuperheroInfo({
+    required this.id,
     required this.name,
     required this.realName,
     required this.imageUrl,
+    this.alignmentInfo,
   });
+
+  factory SuperheroInfo.fromSuperhero(final Superhero superhero) {
+    return SuperheroInfo(
+      id: superhero.id,
+      name: superhero.name,
+      realName: superhero.biography.fullName,
+      imageUrl: superhero.image.url,
+      alignmentInfo: superhero.biography.alignmentInfo,
+    );
+  }
 
   @override
   String toString() {
-    return 'SuperheroInfo{name: $name, realName: $realName, imageUrl: $imageUrl}';
+    return 'SuperheroInfo{id: $id, name: $name, realName: $realName, imageUrl: $imageUrl}';
   }
 
   @override
@@ -176,26 +193,31 @@ class SuperheroInfo {
       identical(this, other) ||
       other is SuperheroInfo &&
           runtimeType == other.runtimeType &&
+          id == other.id &&
           name == other.name &&
           realName == other.realName &&
           imageUrl == other.imageUrl;
 
   @override
-  int get hashCode => name.hashCode ^ realName.hashCode ^ imageUrl.hashCode;
+  int get hashCode =>
+      id.hashCode ^ name.hashCode ^ realName.hashCode ^ imageUrl.hashCode;
 
   static const mocked = [
     SuperheroInfo(
+      id: '70',
       name: 'Batman',
       realName: 'Bruce Wayne',
       imageUrl:
           'https://www.superherodb.com/pictures2/portraits/10/100/639.jpg',
     ),
     SuperheroInfo(
+      id: '732',
       name: 'Ironman',
       realName: 'Tony Stark',
       imageUrl: 'https://www.superherodb.com/pictures2/portraits/10/100/85.jpg',
     ),
     SuperheroInfo(
+      id: '687',
       name: 'Venom',
       realName: 'Eddie Brock',
       imageUrl: 'https://www.superherodb.com/pictures2/portraits/10/100/22.jpg',
@@ -210,6 +232,11 @@ class MainPageStateInfo {
   const MainPageStateInfo(this.searchText, this.haveFavorites);
 
   @override
+  String toString() {
+    return 'MainPageStateInfo{searchText: $searchText, haveFavorites: $haveFavorites}';
+  }
+
+  @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is MainPageStateInfo &&
@@ -220,8 +247,4 @@ class MainPageStateInfo {
   @override
   int get hashCode => searchText.hashCode ^ haveFavorites.hashCode;
 
-  @override
-  String toString() {
-    return 'MainPageStateInfo{searchText: $searchText, haveFavorites: $haveFavorites}';
-  }
 }

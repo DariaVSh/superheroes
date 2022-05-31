@@ -5,7 +5,6 @@ import 'package:superheroes/blocs/main_bloc.dart';
 import 'package:superheroes/pages/superhero_page.dart';
 import 'package:superheroes/resources/superheroes_colors.dart';
 import 'package:superheroes/resources/superheroes_images.dart';
-import 'package:superheroes/widgets/action_button.dart';
 import 'package:superheroes/widgets/info_with_button.dart';
 import 'package:superheroes/widgets/superhero_card.dart';
 
@@ -50,7 +49,6 @@ class _MainPageState extends State<MainPage> {
 }
 
 class MainPageContent extends StatefulWidget {
-
   const MainPageContent({Key? key}) : super(key: key);
 
   @override
@@ -188,32 +186,19 @@ class MainPageStateWidget extends StatelessWidget {
           case MainPageState.minSymbols:
             return const MinSymbolsWidget();
           case MainPageState.noFavorites:
-            return Stack(
-              children: [
-                NoFavoritesWidget(searchFieldFocusNode: searchFieldFocusNode),
-                Align(
-                    alignment: Alignment.bottomCenter,
-                    child: ActionButton(
-                        text: 'Remove', onTap: bloc.removeFavorite))
-              ],
-            );
+            return NoFavoritesWidget(
+                searchFieldFocusNode: searchFieldFocusNode);
           case MainPageState.favorites:
-            return Stack(
-              children: [
-                SuperheroesList(
-                  title: 'Your favorites',
-                  stream: bloc.observeFavoriteSuperheroes(),
-                ),
-                Align(
-                    alignment: Alignment.bottomCenter,
-                    child: ActionButton(
-                        text: 'Remove', onTap: bloc.removeFavorite))
-              ],
+            return SuperheroesList(
+              title: 'Your favorites',
+              stream: bloc.observeFavoriteSuperheroes(),
+              ableToSwipe: true,
             );
           case MainPageState.searchResult:
             return SuperheroesList(
               title: 'Search results',
               stream: bloc.observeSearchesSuperheroes(),
+              ableToSwipe: false,
             );
           case MainPageState.nothingFound:
             return NothingFoundWidget(
@@ -279,57 +264,140 @@ class MinSymbolsWidget extends StatelessWidget {
 class SuperheroesList extends StatelessWidget {
   final String title;
   final Stream<List<SuperheroInfo>> stream;
+  final bool ableToSwipe;
 
   const SuperheroesList({
     Key? key,
     required this.title,
     required this.stream,
+    required this.ableToSwipe,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<SuperheroInfo>>(
-        stream: stream,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData || snapshot.data == null) {
-            return const SizedBox.shrink();
-          }
-          final List<SuperheroInfo> superheroes = snapshot.data!;
-          return ListView.separated(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            itemCount: superheroes.length + 1,
-            itemBuilder: (BuildContext context, int index) {
-              if (index == 0) {
-                return Padding(
-                  padding: const EdgeInsets.only(
-                      left: 16, right: 16, top: 90, bottom: 12),
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                        color: SuperheroesColors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800),
-                  ),
-                );
-              }
-              final SuperheroInfo item = superheroes[index - 1];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SuperheroCard(
-                  superheroInfo: item,
-                  onTap: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => SuperheroPage(name: item.name),
-                    ));
-                  },
-                ),
-              );
+      stream: stream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data == null) {
+          return const SizedBox.shrink();
+        }
+        final List<SuperheroInfo> superheroes = snapshot.data!;
+        return ListView.separated(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          itemCount: superheroes.length + 1,
+          itemBuilder: (BuildContext context, int index) {
+            if (index == 0) {
+              return ListTitleWidget(title: title);
+            }
+            final SuperheroInfo item = superheroes[index - 1];
+            return ListTile(
+              superhero: item,
+              ableToSwipe: ableToSwipe,
+            );
+          },
+          separatorBuilder: (BuildContext context, int index) {
+            return const SizedBox(height: 8);
+          },
+        );
+      },
+    );
+  }
+}
+
+class ListTile extends StatelessWidget {
+  final SuperheroInfo superhero;
+  final bool ableToSwipe;
+
+  const ListTile({
+    Key? key,
+    required this.superhero,
+    required this.ableToSwipe,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final MainBloc bloc = Provider.of<MainBloc>(context, listen: false);
+    if (ableToSwipe) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Dismissible(
+          key: ValueKey(superhero.id),
+          child: SuperheroCard(
+            superheroInfo: superhero,
+            onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (context) => SuperheroPage(id: superhero.id),
+              ));
             },
-            separatorBuilder: (BuildContext context, int index) {
-              return const SizedBox(height: 8);
-            },
-          );
-        });
+          ),
+          secondaryBackground: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: SuperheroesColors.red,
+            ),
+            height: 70,
+            padding: const EdgeInsets.only(right: 16),
+            alignment: Alignment.centerRight,
+            child: Text(
+              'Remove\nfrom\nfavorites'.toUpperCase(),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700),
+            ),
+          ),
+          background: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              color: SuperheroesColors.red,
+            ),
+            height: 70,
+            padding: const EdgeInsets.only(left: 16),
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Remove\nfrom\nfavorites'.toUpperCase(),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700),
+            ),
+          ),
+          onDismissed: (_) => bloc.removeFromFavorites(superhero.id),
+        ),
+      );
+    } else {
+      return SuperheroCard(
+          superheroInfo: superhero,
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (context) => SuperheroPage(id: superhero.id),
+            ));
+          });
+    }
+  }
+}
+
+class ListTitleWidget extends StatelessWidget {
+  const ListTitleWidget({
+    Key? key,
+    required this.title,
+  }) : super(key: key);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, right: 16, top: 90, bottom: 12),
+      child: Text(
+        title,
+        style: const TextStyle(
+            color: SuperheroesColors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w800),
+      ),
+    );
   }
 }
 
