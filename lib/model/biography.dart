@@ -1,5 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
-import 'package:superheroes/model/alighnment_info.dart';
+import 'package:superheroes/model/alignment_info.dart';
 import 'package:collection/collection.dart';
 
 part 'biography.g.dart';

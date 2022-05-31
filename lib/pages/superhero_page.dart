@@ -11,7 +11,7 @@ import 'package:superheroes/resources/superheroes_icons.dart';
 import 'package:superheroes/resources/superheroes_images.dart';
 
 import '../blocs/superhero_bloc.dart';
-import '../model/alighnment_info.dart';
+import '../model/alignment_info.dart';
 
 class SuperheroPage extends StatefulWidget {
   final http.Client? client;
